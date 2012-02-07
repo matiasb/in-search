@@ -1,0 +1,7 @@
+To create the plugin egg run:
+
+    python setup.py bdist_egg
+
+This will create a .egg file in the dist directory.
+
+Then install the plugin from deluge preferences page.
