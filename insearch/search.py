@@ -24,9 +24,16 @@ def isohunt_search(q):
     results = []
     items = data.get('items', {}).get('list', [])
     for result in items:
+        try:
+            seeds = int(result['Seeds'])
+            leechers = int(result['leechers'])
+        except ValueError:
+            seeds = 0
+            leechers = 0
+
         row = {'title': result['title'],
-               'seeds': int(result['Seeds']),
-               'leechers': int(result['leechers']),
+               'seeds': seeds,
+               'leechers': leechers,
                'size': result['size'],
                'url': result['enclosure_url'],
                'details_url': result['link']}
