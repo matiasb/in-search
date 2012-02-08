@@ -42,7 +42,7 @@ from setuptools import setup
 __plugin_name__ = "insearch"
 __author__ = "matiasb"
 __author_email__ = "mbordese@gmail.com"
-__version__ = "0.1"
+__version__ = "0.2"
 __url__ = "https://github.com/matiasb/in-search"
 __license__ = "GPLv3"
 __description__ = "Search torrents without leaving Deluge."
