@@ -186,6 +186,7 @@ class GtkUI(GtkPluginBase):
 
     @defer.inlineCallbacks
     def search(self, widget):
+        """Search and add torrents to download queue."""
         search_dialog = SearchDialog()
         response = yield search_dialog.run()
 
