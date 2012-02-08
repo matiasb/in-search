@@ -38,6 +38,7 @@
 #
 
 import gtk
+from twisted.internet import defer
 
 import deluge.common
 import deluge.component as component
@@ -50,59 +51,105 @@ from common import get_resource
 from search import isohunt_search
 
 
-class SearchDialog(object):
+class BaseDialog(gtk.Dialog):
+    """Base dialog class for plugin dialogs (based on Deluge BaseDialog)."""
+
+    def __init__(self, title, buttons, ui_file=None, parent=None):
+        super(BaseDialog, self).__init__(
+            title=title,
+            parent=parent if parent else component.get("MainWindow").window,
+            flags=(gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT |
+                   gtk.DIALOG_NO_SEPARATOR),
+            buttons=buttons)
+
+        self.connect("delete-event", self._on_delete_event)
+        self.connect("response", self._on_response)
+
+        if ui_file is not None:
+            self._load_ui(ui_file)
+
+    def _load_ui(self, ui_file):
+        """Load dialog content using root object from ui file."""
+        self.builder = gtk.Builder()
+        self.builder.add_from_file(get_resource(ui_file))
+        self.root = self.builder.get_object('root')
+
+        self.get_content_area().pack_start(self.root)
+        self.builder.connect_signals(self)
+
+    def _on_delete_event(self, widget, event):
+        self.deferred.callback(gtk.RESPONSE_DELETE_EVENT)
+        self.destroy()
+
+    def _on_response(self, widget, response):
+        self.deferred.callback(response)
+        self.destroy()
+
+    def run(self):
+        """
+        Shows the dialog and returns a Deferred object.
+        The deferred, when fired will contain the response ID.
+        """
+        self.deferred = defer.Deferred()
+        self.show()
+        return self.deferred
+
+
+class SearchDialog(BaseDialog):
     """Torrent search dialog."""
 
     def __init__(self):
-        self.builder = gtk.Builder()
-        self.builder.add_from_file(get_resource('search.ui'))
-        self.dialog = self.builder.get_object('search_dialog')
+        super(SearchDialog, self).__init__('Search',
+            ('Cancel', gtk.RESPONSE_NO, 'Search', gtk.RESPONSE_YES),
+            ui_file='search.ui')
 
-        # set Search button as the default on activate
-        search_btn = self.builder.get_object('search_btn')
-        search_btn.set_flags(gtk.CAN_DEFAULT)
-        self.dialog.set_default(search_btn)
-        
+        self.set_default_response(gtk.RESPONSE_YES)
+
+        self.age = 0
+        radio_buttons = {'1d_radio': 1,
+                         '7d_radio': 7,
+                         '1m_radio': 30,
+                         '1y_radio': 365,
+                         'all_radio': 0}
+
+        # bind age radio buttons toggle
+        for name, age in radio_buttons.iteritems():
+            button = self.builder.get_object(name)
+            button.connect("toggled", self._on_radio_toggled, age)
+
         self.query = self.builder.get_object('query_entry')
         self.query.set_activates_default(True)
-
-        self.builder.connect_signals(self)
-        self.results_dialog = ResultsDialog()
-
-    def run(self):
-        """Get input query from user and perform search."""
-        self.query.set_text('')
         self.query.grab_focus()
 
-        selected = []
-        response = self.dialog.run()
-        if response == 1:
-            selected = self.do_search()
+    @property
+    def query_value(self):
+        """Return query entered by the user."""
+        return self.query.get_text()
 
-        self.dialog.hide()
-        return selected
+    @property
+    def query_age(self):
+        """Return age selection entered by the user."""
+        return self.age
 
-    def do_search(self):
-        """List search results and return user torrents selection.""" 
-        query = self.query.get_text()
-        results = isohunt_search(query)
-        self.results_dialog.populate(results)
-        selected = self.results_dialog.run()
-        return selected
+    def _on_radio_toggled(self, widget, data=None):
+        if (widget.get_active()):
+            self.age = data
 
 
-class ResultsDialog(object):
+class ResultsDialog(BaseDialog):
     """Torrent results dialog."""
 
     SELECTED = 4
     URL = 5
 
     def __init__(self):
-        self.builder = gtk.Builder()
-        self.builder.add_from_file(get_resource('results.ui'))
-        self.dialog = self.builder.get_object('results_dialog')
+        super(ResultsDialog, self).__init__('Results',
+            ('Close', gtk.RESPONSE_CLOSE,
+             'Add selected torrents', gtk.RESPONSE_YES),
+            ui_file='results.ui')
+
+        self.set_default_response(gtk.RESPONSE_YES)
         self.results_store = self.builder.get_object('results_store')
-        self.builder.connect_signals(self)
 
     def populate(self, results):
         """Populate listview with search results information."""
@@ -113,13 +160,10 @@ class ResultsDialog(object):
                    result['size'], False, result['url']]
             self.results_store.append(row)
 
-    def run(self):
-        """Display torrent results info and return selected entries."""
-        selected = []
-        response = self.dialog.run()
-        if response == 1:
-            selected = [t[self.URL] for t in self.results_store if t[self.SELECTED]]
-        self.dialog.hide()
+    @property
+    def selected(self):
+        """Return URLs for torrents selection from user."""
+        selected = [t[self.URL] for t in self.results_store if t[self.SELECTED]]
         return selected
 
     def on_torrent_toggled(self, renderer, path):
@@ -135,15 +179,27 @@ class GtkUI(GtkPluginBase):
         self.tb_separator = self.plugin_manager.add_toolbar_separator()
         self.tb_search = self.plugin_manager.add_toolbar_button(self.search,
             label="Test", stock=gtk.STOCK_FIND, tooltip="Search IsoHunt")
-        self.search_dialog = SearchDialog()
 
     def disable(self):
         self.plugin_manager.remove_toolbar_button(self.tb_search)
         self.plugin_manager.remove_toolbar_button(self.tb_separator)
 
+    @defer.inlineCallbacks
     def search(self, widget):
-        torrents = self.search_dialog.run()
-        for torrent in torrents:
-            component.get("Core").add_torrent_url(torrent, {})
+        search_dialog = SearchDialog()
+        response = yield search_dialog.run()
 
-  
+        if response == gtk.RESPONSE_YES:
+            age = search_dialog.query_age
+            query = search_dialog.query_value
+            torrents = yield isohunt_search(query, age)
+
+            results_dialog = ResultsDialog()
+            results_dialog.populate(torrents)
+            response = yield results_dialog.run()
+
+            if response == gtk.RESPONSE_YES:
+                selected = results_dialog.selected
+
+                for torrent in selected:
+                    component.get("Core").add_torrent_url(torrent, {})

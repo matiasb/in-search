@@ -4,22 +4,38 @@
 # Copyright (C) 2009 Matias Bordese <mbordese@gmail.com>
 #
 
-import json
-import urllib2
+try:
+    import json
+except ImportError:
+    import simplejson as json
 
+#import urllib2
+
+from twisted.internet import defer
+from twisted.web import client
 from urllib import urlencode, quote
 
-def isohunt_search(q):
+
+@defer.inlineCallbacks
+def isohunt_search(q, age=0):
     """Perform isoHunt torrents search."""
     # http://ca.isohunt.com/forum/viewtopic.php?p=433527&sid=#433527
+    cookies = {'torrentAge': age}
     search_params = {'ihq': q,
                      'rows': '10',
                      'sort': 'seeds'}
     encoded_params = urlencode(search_params)
 
     api_url = 'http://isohunt.com/js/json.php?%s' % encoded_params
-    url_data = urllib2.urlopen(api_url)
-    data = json.load(url_data)
+    #url_data = urllib2.urlopen(api_url)
+
+    try:
+        result = yield client.getPage(api_url, cookies=cookies)
+    except:
+        results = None
+        defer.returnValue(results)
+        
+    data = json.loads(result)
 
     results = []
     items = data.get('items', {}).get('list', [])
@@ -38,4 +54,4 @@ def isohunt_search(q):
                'url': result['enclosure_url'],
                'details_url': result['link']}
         results.append(row)
-    return results
+    defer.returnValue(results)
