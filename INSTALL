@@ -5,3 +5,6 @@ To create the plugin egg run:
 This will create a .egg file in the dist directory.
 
 Then install the plugin from deluge preferences page.
+
+You can also get the plugin .egg file from the Downloads section,
+here: https://github.com/matiasb/in-search/downloads.
