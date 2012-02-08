@@ -4,6 +4,7 @@
   <!-- interface-naming-policy project-wide -->
   <object class="GtkVBox" id="root">
     <property name="visible">True</property>
+    <property name="spacing">6</property>
     <child>
       <object class="GtkEntry" id="query_entry">
         <property name="visible">True</property>
@@ -17,6 +18,7 @@
     <child>
       <object class="GtkHBox" id="hbox1">
         <property name="visible">True</property>
+        <property name="spacing">6</property>
         <child>
           <object class="GtkLabel" id="label1">
             <property name="visible">True</property>
