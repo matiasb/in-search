@@ -52,6 +52,8 @@ def isohunt_search(q, age=0):
                'leechers': leechers,
                'size': result['size'],
                'url': result['enclosure_url'],
+               'pubDate': result['pubDate'],
+               'votes': result['votes'],
                'details_url': result['link']}
         results.append(row)
     defer.returnValue(results)

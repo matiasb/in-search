@@ -36,6 +36,7 @@
 #    this exception statement from your version. If you delete this exception
 #    statement from all source files in the program, then also delete it here.
 #
+from datetime import datetime
 
 import gtk
 from twisted.internet import defer
@@ -151,13 +152,51 @@ class ResultsDialog(BaseDialog):
         self.set_default_response(gtk.RESPONSE_YES)
         self.results_store = self.builder.get_object('results_store')
 
+    def _format_date(self, str_date, input_format=None, output_format=None):
+        """Return a reformatted date string."""
+        if input_format is None:
+            input_format = '%a, %d %b %Y %H:%M:%S %Z'
+
+        if output_format is None:
+            output_format = '%d-%b-%Y'
+
+        try:
+            now = datetime.utcnow()
+            as_datetime = datetime.strptime(str_date, input_format)
+            delta = now - as_datetime
+
+            if delta.days <= 1:
+                output_date = 'Today'
+            elif 1 < delta.days and delta.days < 2:
+                output_date = 'Yesterday'
+            else:
+                output_date = as_datetime.strftime(output_format)
+        except:
+            output_date = '-'
+        return output_date
+
+    def _format_votes(self, votes):
+        """Return votes as a formatted string."""
+        try:
+            votes = int(votes)
+        except:
+            votes = 0
+        color = votes >= 0 and '#006400' or 'red'
+        votes_data = '<span color="%s"><b>%+d</b></span>' % (color, votes)
+        return votes_data
+
     def populate(self, results):
         """Populate listview with search results information."""
         self.results_store.clear()
         for result in results:
-            # [title, seeds(int), leechers(int), size, selected(bool), url]
+            # [title, seeds(int), leechers(int), size, selected(bool), url,
+            #  pub date, votes]
+
+            pub_date = self._format_date(result['pubDate'])
+            votes = self._format_votes(result['votes'])
+
             row = [result['title'], result['seeds'], result['leechers'],
-                   result['size'], False, result['url']]
+                   result['size'], False, result['url'], pub_date, votes]
             self.results_store.append(row)
 
     @property
@@ -171,6 +210,24 @@ class ResultsDialog(BaseDialog):
         current_value = renderer.get_active()
         tree_iter = self.results_store.get_iter_from_string(path)
         self.results_store.set(tree_iter, self.SELECTED, not current_value)
+
+
+class SearchingDialog(gtk.Dialog):
+    def __init__(self):
+        super(SearchingDialog, self).__init__(title="",
+            parent=component.get("MainWindow").window,
+            flags=(gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT |
+                   gtk.DIALOG_NO_SEPARATOR))
+        self.set_decorated(False)
+
+        hbox = gtk.HBox()
+        hbox.set_spacing(6)
+        spinner = gtk.Spinner()
+        spinner.start()
+        label = gtk.Label('Searching...')
+        hbox.pack_start(spinner)
+        hbox.pack_start(label)
+        self.get_content_area().pack_start(hbox)
 
 
 class GtkUI(GtkPluginBase):
@@ -191,9 +248,14 @@ class GtkUI(GtkPluginBase):
         response = yield search_dialog.run()
 
         if response == gtk.RESPONSE_YES:
+            searching_dialog = SearchingDialog()
+            searching_dialog.show_all()
+            
             age = search_dialog.query_age
             query = search_dialog.query_value
             torrents = yield isohunt_search(query, age)
+
+            searching_dialog.destroy()
 
             results_dialog = ResultsDialog()
             results_dialog.populate(torrents)
